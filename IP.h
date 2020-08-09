@@ -2,6 +2,13 @@
 //RFC 791
 
 #include <iostream>
+#include <string>
+#include <vector>
+#include <map>
+#include <thread>
+#include <chrono>
+#include <ctime>
+
 using namespace std;
 
 #define MTU 280
@@ -43,131 +50,43 @@ struct IDatagramHeader {
 	uint32_t Padding{ 0x0 };	//(in our case is 24 bit) Padding variable use, because the internet header ends on a 32 bit boundary 
 };
 
-struct IDatagram {
-	IDatagramHeader* Header{ nullptr };
-	uint8_t* Data{ nullptr };
-	uint32_t DataLength{ 0 };
+class IDatagram {
+public:
+	IDatagramHeader* Header{ nullptr };		//Datagram head
+	vector<uint8_t>* Data{ nullptr };		//Datagram data
+	~IDatagram();							//Destructor IDatagram
 };
 
+class ISocketSender {
+	public:
+		vector<IDatagram*> SendingDatagrams;				//Buffer for send datagrams
+		void proc_print_datagram(IDatagram* SendDatagram);	//Print Datagram procedure
+		void proc_calc_checksum(IDatagram* SendDatagram);	//Calculate checksum procedure
+		void proc_fragmentation(IDatagram* SendDatagram);	//Fragmentation procedure
+};
 
-void proc_calc_checksum(IDatagram* SendDatagram) {
+class ResourcesBuffer {
+public:
+	vector<uint8_t> DATA_BUFFER;		//data buffer
+	vector<bool> RCVBT;					//fragment block bit table
+	IDatagramHeader HEADER_BUFFER;		//header buffer
+	int TIMER{ 0 };						//timer
+	uint16_t TDL{ 0 };					//total data length field
+	size_t TimerStartTime{ 0 };			//Current start time
 
-}
+	ResourcesBuffer();					//Constructor ResourcesBuffer
+	~ResourcesBuffer();					//Destructor ResourcesBuffer
+};
 
-void proc_send_datagram(IDatagram* SendDatagram) {
-	//Transport time is 4 seconds (4 rout steps)
-	SendDatagram->Header->TimeToLive -= 4;
-	
-	cout << "Datagram is sent!" << endl;
-	cout << "Datagram with Version: " << (int)SendDatagram->Header->Version << endl;
-	cout << "Datagram with IHL: " << (int) SendDatagram->Header->IHL << endl;
-	cout << "Datagram with Total length: " << (int)SendDatagram->Header->TotalLength << endl;
-	cout << "Datagram with Identification: " << (int)SendDatagram->Header->Identification << endl;
-	cout << "Datagram with Flag: " << (int)SendDatagram->Header->Flags << endl;
-	cout << "Datagram with Fragment Offset: " << (int)SendDatagram->Header->Offset << endl;
-	cout << "Datagram with Time: " << (int)SendDatagram->Header->TimeToLive << endl;
-	cout << "Datagram with Protocol: " << (int)SendDatagram->Header->Protocol << endl << endl;
+class ISocketReceiver {	
+	bool DestroyTimerThread{ true };									//Variable for destroy TimerThread
+	size_t TLB{ 15 };													//Timer Lower Bound
+public:
+	~ISocketReceiver();													//Destructor ISocketReceiver
+	map<string, ResourcesBuffer*> SOCKET_BUFFER;						//Socket Buffer
+	void CreateTimerThread();											//CreateTimerThread method
+	void proc_print_datagram(IDatagram* ReassembledReceivedDatagram);	//Print Datagram procedure
+	void proc_reassembly(IDatagram* ReceivedDatagram);					//Reassembly procedure
+	void proc_timer_checker();											//Timer checker procedure
+};
 
-	delete SendDatagram->Header;
-	delete SendDatagram;
-	return;
-}
-
-
-//Fragmentation procedure
-//Notation:
-//FO - Fragment Offset
-//IHL - Internet Header Length
-//DF - Don't Fragment flag
-//MF - More Fragments flag
-//TL - Total Length
-//OFO - Old Fragment Offset
-//OIHL - Old Internet Header Length
-//OMF - Old More Fragments flag
-//OTL - Old Total Length
-//NFB - Number of Fragment Blocks
-//MTU - Maximum Transmission Unit
-
-void proc_fragmentation(IDatagram* SendDatagram) {
-	if (SendDatagram->Header->TotalLength <= MTU) { proc_send_datagram(SendDatagram); return; }
-	//IF FLAG DF == 1
-	else if ((SendDatagram->Header->Flags & 0x2) == 0x2) { 
-		delete SendDatagram->Header;
-		delete SendDatagram;
-		return; 
-	}
-	//Produce the first fragment
-	//(1) Copy the original internet header
-	else {
-		IDatagram* OldSendDatagram = new IDatagram;
-		OldSendDatagram->Header = new IDatagramHeader;
-		
-		OldSendDatagram->Header->Version = SendDatagram->Header->Version;
-		OldSendDatagram->Header->Identification = SendDatagram->Header->Identification;
-		OldSendDatagram->Header->TimeToLive = SendDatagram->Header->TimeToLive;
-		OldSendDatagram->Header->Protocol = SendDatagram->Header->Protocol;
-		
-		//(2)
-		OldSendDatagram->Header->IHL = SendDatagram->Header->IHL;
-		OldSendDatagram->Header->TotalLength = SendDatagram->Header->TotalLength;
-		OldSendDatagram->Header->Offset = SendDatagram->Header->Offset;
-
-		//Copy pointers to Data
-		OldSendDatagram->Data = SendDatagram->Data;
-		//Copy Data length
-		OldSendDatagram->DataLength = SendDatagram->DataLength;
-
-		//MF flag
-		OldSendDatagram->Header->Flags = 0x0 | (SendDatagram->Header->Flags & 0x1);
-
-		//(3)
-		uint16_t NFB = (MTU - SendDatagram->Header->IHL * 4) / 8;
-		
-		//(4) Attach the first NFB*8 data octets
-		SendDatagram->DataLength = NFB * 8;
-
-		//Change start pointer to data
-		OldSendDatagram->Data = OldSendDatagram->Data + (NFB * 8);
-		OldSendDatagram->DataLength = OldSendDatagram->DataLength - (NFB * 8);
-
-		//(5) Correct the header
-		SendDatagram->Header->Flags = SendDatagram->Header->Flags | 0x1;
-		SendDatagram->Header->TotalLength = (SendDatagram->Header->IHL * 4) + (NFB * 8);
-
-		//Recompute Checksum
-		proc_calc_checksum(SendDatagram);
-
-		//(6) Submit fragment
-		proc_send_datagram(SendDatagram);
-
-		//Produce the second fragment
-		//(7) Selectively copy the internet header
-		IDatagram* SecondFragmentSendDatagram = new IDatagram;
-		SecondFragmentSendDatagram->Header = new IDatagramHeader;
-
-		SecondFragmentSendDatagram->Header->Version = OldSendDatagram->Header->Version;
-		SecondFragmentSendDatagram->Header->Identification = OldSendDatagram->Header->Identification;
-		SecondFragmentSendDatagram->Header->TimeToLive = OldSendDatagram->Header->TimeToLive;
-		SecondFragmentSendDatagram->Header->Protocol = OldSendDatagram->Header->Protocol;
-		
-		SecondFragmentSendDatagram->Header->IHL = ((OldSendDatagram->Header->IHL * 4 - 0) + 3) / 4;
-		
-		SecondFragmentSendDatagram->Header->TotalLength =
-			OldSendDatagram->Header->TotalLength -
-			NFB * 8 -
-			(OldSendDatagram->Header->IHL - SecondFragmentSendDatagram->Header->IHL) * 4;
-
-		SecondFragmentSendDatagram->Header->Offset =
-			OldSendDatagram->Header->Offset + NFB;
-
-		SecondFragmentSendDatagram->Header->Flags = OldSendDatagram->Header->Flags & 0x1;
-
-		//Recompute Checksum
-		proc_calc_checksum(SecondFragmentSendDatagram);
-
-		//(10) Submit fragment to the fragmentation test
-		delete OldSendDatagram->Header;
-		delete OldSendDatagram;
-		proc_fragmentation(SecondFragmentSendDatagram);
-	}
-}
