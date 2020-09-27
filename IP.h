@@ -10,7 +10,7 @@
 #include "stdint.h"
 #include "stdlib.h"
 #include "vector/vector.h"
-#include "map/src/map.h"
+#include "map/map.h"
 //#include <map>
 //#include <thread>
 //#include <chrono>
