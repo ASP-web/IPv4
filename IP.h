@@ -4,19 +4,21 @@
 //lib <https://github.com/rxi/map> by 2014 rxi
 //lib <https://github.com/goldsborough/vector> by Peter Goldsborough
 
-//#include <iostream>
-//#include <string>
 #include "stdio.h"
 #include "stdint.h"
 #include "stdlib.h"
-#include "vector/vector.h"
-#include "map/map.h"
-//#include <map>
-//#include <thread>
-//#include <chrono>
-//#include <ctime>
+#include "time.h"
+#include "pthread.h"
+
+#include "vector_library/vector.h"
+#include "map_library/map.h"
+#include "sds_library/sds.h"
 
 #define MTU 280
+#define max(a,b) \
+   ({ __typeof__ (a) _a = (a); \
+       __typeof__ (b) _b = (b); \
+     _a > _b ? _a : _b; })
 
 //IDatagramHeader Structure and Methods declaration
 typedef struct IDatagramHeader
@@ -56,15 +58,20 @@ typedef struct IDatagramHeader
     //0x0 a single octet of option-type (0x0 end of option list)
     uint32_t Padding;	        //(in our case is 24 bit) Padding variable use, because the internet header ends on a 32 bit boundary
 } IDatagramHeader;
+
+IDatagramHeader* CreateIDatagramHeader();
+void ClearIDatagramHeader(IDatagramHeader* pIDatagramHeader);
+void CopyHeaderData(IDatagramHeader* HeaderDestination, IDatagramHeader* HeaderSource);
 //
 
 //IDatagram Structure and Methods declaration
 typedef struct IDatagram
 {
-    IDatagramHeader* Header;		//Datagram head
-    Vector* Data;		            //Datagram data
+    IDatagramHeader* pHeader;		//Datagram head
+    Vector* pData;		            //Datagram data
 } IDatagram;
 
+IDatagram* CreateIDatagram();
 void ClearIDatagram(IDatagram* pIDatagram);
 //
 
@@ -72,27 +79,29 @@ void ClearIDatagram(IDatagram* pIDatagram);
 //ISocketSender Structure and Methods declaration
 typedef struct ISocketSender
 {
-    Vector* SendingDatagrams;				         //Buffer for send datagrams
+    Vector* pSendingDatagrams;				         //Buffer for send datagrams
 } ISocketSender;
 
-void proc_print_send_datagram(IDatagram* SendDatagram, ISocketSender* pSocketSender);	//Print Datagram procedure
-void proc_calc_checksum(IDatagram* SendDatagram, ISocketSender* pSocketSender);	        //Calculate checksum procedure
-void proc_fragmentation(IDatagram* SendDatagram, ISocketSender* pSocketSender);	        //Fragmentation procedure
+ISocketSender* CreateISocketSender();
+void ClearISocketSender(ISocketSender* pISocketSender);
+void proc_print_send_datagram(IDatagram* pSendDatagram, ISocketSender* pSocketSender);	    //Print Datagram procedure
+void proc_calc_checksum(IDatagram* pSendDatagram, ISocketSender* pSocketSender);	        //Calculate checksum procedure
+void proc_fragmentation(IDatagram* pSendDatagram, ISocketSender* pSocketSender);	        //Fragmentation procedure
 //
-/*
+
 //ResourcesBuffer Structure and Methods declaration
 typedef struct ResourcesBuffer
 {
-    Vector* DATA_BUFFER;		        //data buffer
-    Vector* RCVBT;					    //fragment block bit table
-    IDatagramHeader* HEADER_BUFFER;		//header buffer
+    Vector* pDataBuffer;		        //data buffer
+    Vector* pRCVBT;					    //fragment block bit table
+    IDatagramHeader* pHeaderBuffer;		//header buffer
     int TIMER;						    //timer
     uint16_t TDL;					    //total data length field
     size_t TimerStartTime;			    //Current start time
 } ResourcesBuffer;
 
-ResourcesBuffer* CreateResourcesBuffer();					//Constructor ResourcesBuffer
-void ClearResourcesBuffer();				                //Destructor ResourcesBuffer
+ResourcesBuffer* CreateResourcesBuffer();					            //Constructor ResourcesBuffer
+void ClearResourcesBuffer(ResourcesBuffer* pResourcesBuffer);		    //Destructor ResourcesBuffer
 //
 
 //ISocketReceiver Structure and Methods declaration
@@ -100,12 +109,13 @@ typedef struct ISocketReceiver
 {
     bool DestroyTimerThread;									//Variable for destroy TimerThread
     size_t TLB;													//Timer Lower Bound
-    map_void_t* SOCKET_BUFFER;				                    //Socket Buffer
+    map_void_t* pSocketBuffer;				                    //Socket Buffer
 } ISocketReceiver;
 
-void ClearISocketReceiver();									            //Destructor ISocketReceiver
-void CreateTimerThread();											        //CreateTimerThread method
-void proc_print_receive_datagram(IDatagram* ReassembledReceivedDatagram);	//Print Datagram procedure
-void proc_reassembly(IDatagram* ReceivedDatagram);					        //Reassembly procedure
-void proc_timer_checker();											        //Timer checker procedure
-*/
+ISocketReceiver* CreateISocketReceiver();
+void ClearISocketReceiver(ISocketReceiver* pISocketReceiver);				                                    //Destructor ISocketReceiver
+void CreateTimerThread(ISocketReceiver* pISocketReceiver);					                                    //CreateTimerThread method
+void proc_print_receive_datagram(IDatagram* pReassembledReceivedDatagram);	                                    //Print Datagram procedure
+void proc_reassembly(IDatagram* pReceivedDatagram, ISocketReceiver* pISocketReceiver);					        //Reassembly procedure
+void* proc_timer_checker(ISocketReceiver* pISocketReceiver);											                                            //Timer checker procedure
+
